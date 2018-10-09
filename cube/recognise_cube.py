@@ -77,7 +77,7 @@ def find_colored_squares_in_image(image):
     # print(sq_width, sq_height)
     # print(ordered_corners[0])
     # rectangles.append(approx)
-    # print(len(rectangles))
+    print(f"found {len(rectangles)}")
     cv2.drawContours(image, list(rectangles), -1, (0, 255, 0), 2)
     return image
 
@@ -122,11 +122,21 @@ def get_recs(image, rel_similarity_threshold=0.05):
     rectangles = np.array(rectangles)
     areas = rectangles[:, 1]
     rectangles = rectangles[:, 0]
+    rectangles = sorted(rectangles, key=lambda x: np.min(np.sum(x[:, 0], axis=1)))
+    for i, rec in enumerate(rectangles[:-1]):
+        for neighbour in rectangles[i+1:]:
+            print(np.sum(np.abs(rec[np.argmin(np.sum(rec[:, 0], axis=1)), 0]
+                                - neighbour[np.argmin(np.sum(neighbour[:, 0], axis=1)), 0])))
+            if np.sum(np.abs(rec[np.argmin(np.sum(rec[:, 0], axis=1)), 0]
+                             - neighbour[np.argmin(np.sum(neighbour[:, 0], axis=1)), 0])) < 10:
+                rectangles[i] = None
+                break
+    rectangles = np.array([rec for rec in rectangles if rec is not None])
     return rectangles, areas
 
 
 if __name__ == '__main__':
-    images_to_print = [f"cube_1_{i}" for i in range(6)]
+    images_to_print = [f"cube_1_{i}" for i in range(1)]
     # images_to_print = ["cube_1_0"]
     # images_to_print = [f"cube_1_{i}_warped" for i in range(3, 6)]
     for image_name in images_to_print:
