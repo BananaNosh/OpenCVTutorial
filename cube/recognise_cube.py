@@ -6,7 +6,7 @@ import numpy as np
 import math
 
 
-def transform_according_to_reference_square(image, reference_points, ref_area):
+def transform_according_to_reference_square(image, reference_points):
     # obtain a consistent order of the points and unpack them
     # individually
     rect = order_points(reference_points)
@@ -47,13 +47,14 @@ def transform_according_to_reference_square(image, reference_points, ref_area):
 
 def find_colored_squares_in_image(image):
     image = imutils.resize(image, height=500)
+    print(np.std(image, axis=0))
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
     edged = cv2.Canny(gray, 50, 100)
     print("STEP 1: Edge Detection")
     # cv2.imshow("Edged", edged)
 
-    rectangles, areas = get_recs(edged, colored_image=image)
+    rectangles = get_recs(edged, colored_image=image)
     if len(rectangles) == 0:
         return image
 
@@ -63,9 +64,7 @@ def find_colored_squares_in_image(image):
     if False and warp_ratio > 0.1:
         ref_index = np.argmin(np.abs(warp_ratios - warp_ratio))
         reference_rectangle = rectangles[ref_index]
-        reference_rec_area = areas[ref_index]
-        image = transform_according_to_reference_square(image, np.reshape(reference_rectangle, (4, 2)),
-                                                        reference_rec_area)
+        image = transform_according_to_reference_square(image, np.reshape(reference_rectangle, (4, 2)))
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
         edged = cv2.Canny(gray, 50, 100)
@@ -139,7 +138,6 @@ def get_recs(image_to_extract_from, rel_similarity_threshold=0.05, colored_image
     if len(rectangles) == 0:
         return np.array([]), np.array([])
     rectangles = np.array(rectangles)
-    areas = rectangles[:, 1]
     rectangles = rectangles[:, 0]
     # remove doubles
     rectangles = sorted(rectangles, key=lambda x: np.min(np.sum(x[:, 0], axis=1)))
@@ -152,7 +150,7 @@ def get_recs(image_to_extract_from, rel_similarity_threshold=0.05, colored_image
                 rectangles[i] = None
                 break
     rectangles = np.array([rec for rec in rectangles if rec is not None])
-    return rectangles, areas
+    return rectangles
 
 
 if __name__ == '__main__':
