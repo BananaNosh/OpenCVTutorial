@@ -46,7 +46,6 @@ def transform_according_to_reference_square(image, reference_points, ref_area):
 
 
 def find_colored_squares_in_image(image):
-    print(image.shape)
     image = imutils.resize(image, height=500)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -54,11 +53,14 @@ def find_colored_squares_in_image(image):
     print("STEP 1: Edge Detection")
     # cv2.imshow("Edged", edged)
 
-    rectangles, areas = get_recs(edged)
+    rectangles, areas = get_recs(edged, colored_image=image)
+    if len(rectangles) == 0:
+        return image
+
     warp_ratios = get_warp_ratios(rectangles)
 
     warp_ratio = np.mean(warp_ratios)
-    if warp_ratio > 0.1:
+    if False and warp_ratio > 0.1:
         ref_index = np.argmin(np.abs(warp_ratios - warp_ratio))
         reference_rectangle = rectangles[ref_index]
         reference_rec_area = areas[ref_index]
@@ -86,18 +88,18 @@ def get_warp_ratios(rectangles):
     np_rectangles = np.zeros((len(rectangles), 4, 1, 2))
     for i, rect in enumerate(rectangles):
         np_rectangles[i] = rect
-    print(np_rectangles.shape, rectangles.shape)
+    # print(np_rectangles.shape, rectangles.shape)
     flattened_recs = np_rectangles[:, :, 0]
     right_order_recs = np.array([order_points(rec) for rec in flattened_recs])
     warp_ratio_dist = right_order_recs[:, 3] - right_order_recs[:, 0]
     warp_ratios = np.abs(warp_ratio_dist[:, 0] / warp_ratio_dist[:, 1])
     warp_ratio = np.mean(warp_ratios)
-    print(warp_ratio)
+    # print(warp_ratio)
     return warp_ratios
 
 
-def get_recs(image, rel_similarity_threshold=0.05):
-    cnts = cv2.findContours(image.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[1]
+def get_recs(image_to_extract_from, rel_similarity_threshold=0.05, colored_image=None):
+    cnts = cv2.findContours(image_to_extract_from.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[1]
     cnts = sorted(cnts, key=cv2.contourArea, reverse=True)
     rectangles = []
     for c in cnts:
@@ -109,19 +111,37 @@ def get_recs(image, rel_similarity_threshold=0.05):
         # can assume that we have found a square
         if len(approx) == 4:
             sq_area = cv2.contourArea(approx)
-            print(sq_area)
+            # print(sq_area)
             if sq_area < 1000:
                 break
-            print(rectangles[-1][1] / sq_area if len(rectangles) > 0 else None)
+
+            x_min, y_min = np.min(approx, axis=(0, 1))
+            x_max, y_max = np.max(approx, axis=(0, 1))
+            width = x_max - x_min
+            height = y_max - y_min
+            x_min = int(x_min + 0.1 * width)
+            x_max = int(x_max - 0.1 * width)
+            y_min = int(y_min + 0.1 * height)
+            y_max = int(y_max - 0.1 * height)
+            mean_color_std = np.mean(np.std(colored_image[y_min:y_max, x_min:x_max], axis=(0, 1)))
+            print("std", mean_color_std)
+            if mean_color_std > 15:
+                continue
+            cv2.rectangle(image, (x_min, y_min), (x_max, y_max), (0, 0, 255), 2)
+
+            # check for similarity in size
             if len(rectangles) > 0 and not math.isclose(sq_area, rectangles[-1][1], rel_tol=rel_similarity_threshold):
                 if len(rectangles) < 3:
                     rectangles = []
                 else:
                     continue
             rectangles.append(np.array([approx, sq_area]))
+    if len(rectangles) == 0:
+        return np.array([]), np.array([])
     rectangles = np.array(rectangles)
     areas = rectangles[:, 1]
     rectangles = rectangles[:, 0]
+    # remove doubles
     rectangles = sorted(rectangles, key=lambda x: np.min(np.sum(x[:, 0], axis=1)))
     for i, rec in enumerate(rectangles[:-1]):
         for neighbour in rectangles[i+1:]:
@@ -136,8 +156,8 @@ def get_recs(image, rel_similarity_threshold=0.05):
 
 
 if __name__ == '__main__':
-    images_to_print = [f"cube_1_{i}" for i in range(1)]
-    # images_to_print = ["cube_1_0"]
+    images_to_print = [f"cube_1_{i}" for i in range(6)]
+    # images_to_print = ["cube_0_2"]
     # images_to_print = [f"cube_1_{i}_warped" for i in range(3, 6)]
     for image_name in images_to_print:
         image = cv2.imread(f"./data/{image_name}.png")
