@@ -73,8 +73,8 @@ def find_colored_squares_in_image(image):
     rectangles = list(rectangles)
 
     if len(rectangles) < 9:
-        for i, (lower, upper) in enumerate(zip([np.array([0, 0, 70]), np.array([78, 0, 0])],
-                                               [np.array([91, 255, 145]), np.array([169, 255, 42])])):
+        for i, (lower, upper) in enumerate(zip([np.array([0, 0, 70]), np.array([100, 0, 0])],
+                                               [np.array([91, 255, 170]), np.array([169, 255, 42])])):
             only_colored = cv2.inRange(image, lower, upper)
             colored_recs = get_recs(only_colored, rel_similarity_threshold=0.2, already_found_recs=rectangles)
             if len(colored_recs):
@@ -179,8 +179,8 @@ def remove_doubles(rectangles):
 
 
 if __name__ == '__main__':
-    # images_to_print = [f"cube_1_{i}" for i in range(6)]
-    images_to_print = ["cube_1_1"]
+    images_to_print = [f"cube_1_{i}" for i in range(6)]
+    # images_to_print = ["cube_1_5"]
     # images_to_print = [f"cube_1_{i}_warped" for i in range(3, 6)]
     for image_name in images_to_print:
         image = cv2.imread(f"./data/{image_name}.png")
