@@ -42,7 +42,7 @@ def get_arguments():
     if not xor(bool(args['image']), bool(args['webcam'])):
         ap.error("Please specify only one image source")
 
-    if not args['filter'].upper() in ['RGB', 'HSV']:
+    if not args['filter'].upper() in ['RGB', "LAB", 'HSV']:
         ap.error("Please speciy a correct filter.")
 
     return args
@@ -69,6 +69,8 @@ def main():
 
         if range_filter == 'RGB':
             frame_to_thresh = image.copy()
+        elif range_filter == 'LAB':
+            frame_to_thresh = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
         else:
             frame_to_thresh = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     else:
@@ -85,6 +87,8 @@ def main():
 
             if range_filter == 'RGB':
                 frame_to_thresh = image.copy()
+            elif range_filter == 'LAB':
+                frame_to_thresh = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
             else:
                 frame_to_thresh = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
