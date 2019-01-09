@@ -3,9 +3,17 @@ from imutils.perspective import order_points
 import cv2
 import numpy as np
 import math
+import argparse
+from threading import Thread
 
-color_spaces_hsv = [((100, 131, 0), (125, 255, 255))  # blue
-                    ]
+color_spaces_hsv = [
+    ((100, 131, 0), (125, 255, 255)),  # blue
+    ((70, 0, 0), (90, 255, 190)),  # green
+    ((40, 0, 165), (90, 100, 255)),  # yellow
+    ((85, 0, 165), (185, 105, 255)),  # white
+    ((0, 0, 165), (15, 255, 255)),  # orange
+    ((0, 110, 49), (190, 255, 161))  # red
+]
 colors = {"blue": (0, 0, 255)}
 
 
@@ -41,8 +49,8 @@ def transform_according_to_reference_square(image, reference_points):
         rect[0] + [0, new_ref_height - 1]], dtype="float32")
 
     # compute the perspective transform matrix and then apply it
-    M = cv2.getPerspectiveTransform(rect, dst)
-    warped = cv2.warpPerspective(image, M, (image.shape[1], image.shape[0]))
+    transform_matrix = cv2.getPerspectiveTransform(rect, dst)
+    warped = cv2.warpPerspective(image, transform_matrix, (image.shape[1], image.shape[0]))
 
     # return the warped image
     return warped
@@ -63,11 +71,11 @@ def find_colored_squares_in_image(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
     edged = cv2.Canny(gray, 50, 100)
-    print("STEP 1: Edge Detection")
+    # print("STEP 1: Edge Detection")
 
     rectangles = get_recs(edged, colored_image=image)
     if len(rectangles) == 0:
-        return image
+        return [], image
 
     # warp_ratios = get_warp_ratios(rectangles)
     #
@@ -93,9 +101,9 @@ def find_colored_squares_in_image(image):
                 rectangles.extend(colored_recs)
                 rectangles = list(remove_doubles(rectangles))
 
-    print(f"found {len(rectangles)}")
     if len(rectangles) > 9:
-        raise AssertionError("Too many squares found")
+        print("Too many squares found")
+        return [], image
 
     recs_reshaped = np.array([order_points(np.reshape(rec, (4, 2))).astype(np.int32) for rec in rectangles])
     mean_height = int(np.max(recs_reshaped[:, [3, 2], 1] - recs_reshaped[:, [0, 1], 1]))
@@ -104,8 +112,9 @@ def find_colored_squares_in_image(image):
     for i, rec in enumerate(recs_reshaped):
         x = rec[0, 0]
         y = rec[0, 1]
-        cv2.putText(image, f"{i+1}", (x + 20, y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, [0, 0, 255])
-        found_colors.append(color_for_rect(image, rec))
+        color = color_for_rect(image, rec)
+        cv2.putText(image, f"{color}", (x + 20, y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, [0, 0, 255])
+        found_colors.append(color)
 
     # rectangles = [rec.reshape((4, 1, 2)) for rec in recs_reshaped]
     cv2.drawContours(image, rectangles, -1, (0, 255, 0), 2)
@@ -140,7 +149,6 @@ def get_recs(image_to_extract_from, rel_similarity_threshold=0.05, colored_image
         # can assume that we have found a square
         if len(approx) == 4:
             sq_area = cv2.contourArea(approx)
-            # print(sq_area)
             if sq_area < 1000:
                 break
 
@@ -148,7 +156,6 @@ def get_recs(image_to_extract_from, rel_similarity_threshold=0.05, colored_image
             if colored_image is not None:
                 image_part = get_center_rec(approx, colored_image)
                 mean_color_std = np.mean(np.std(image_part, axis=(0, 1)))
-                print("std", mean_color_std)
                 if mean_color_std > 15:
                     continue
 
@@ -172,8 +179,8 @@ def get_recs(image_to_extract_from, rel_similarity_threshold=0.05, colored_image
 
 def get_center_rec(approx, image, rel_margin=0.1):
     reshaped = np.reshape(approx, (4, 2))
-    x_min, y_min = np.min(reshaped, axis=(0))
-    x_max, y_max = np.max(reshaped, axis=(0))
+    x_min, y_min = np.min(reshaped, axis=0)
+    x_max, y_max = np.max(reshaped, axis=0)
     width = x_max - x_min
     height = y_max - y_min
     x_min = int(x_min + rel_margin * width)
@@ -187,8 +194,6 @@ def get_center_rec(approx, image, rel_margin=0.1):
 def remove_doubles(rectangles):
     for i, rec in enumerate(rectangles[:-1]):
         for neighbour in rectangles[i + 1:]:
-            print(np.sum(np.abs(rec[np.argmin(np.sum(rec[:, 0], axis=1)), 0]
-                                - neighbour[np.argmin(np.sum(neighbour[:, 0], axis=1)), 0])))
             if np.sum(np.abs(rec[np.argmin(np.sum(rec[:, 0], axis=1)), 0]
                              - neighbour[np.argmin(np.sum(neighbour[:, 0], axis=1)), 0])) < 10:
                 rectangles[i] = None
@@ -197,14 +202,128 @@ def remove_doubles(rectangles):
     return rectangles
 
 
+def colors_from_video(video_path=None, show=False):
+    colors_for_sides = [[] for _ in range(6)]
+    frames_after_sixth_side = 0
+    if not video_path:
+        vc = cv2.VideoCapture(0)
+    else:
+        vc = cv2.VideoCapture(video_path)
+    while True:
+        _, frame = vc.read()
+        if frame is None or (not video_path and frames_after_sixth_side == 10):
+            break
+
+        found_colors, frame = find_colored_squares_in_image(frame)
+
+        if frames_after_sixth_side > 0:
+            frames_after_sixth_side += 1
+        if len(found_colors) == 9 and found_colors[4] < 6:
+            colors_for_sides[found_colors[4]].append(found_colors)
+            if len(colors_for_sides[found_colors[4]]) > 50:
+                colors_for_sides[found_colors[4]].pop(0)
+            if frames_after_sixth_side == 0 and not any([len(side) == 0 for side in colors_for_sides]):
+                frames_after_sixth_side = 1
+
+        if show:
+            cv2.imshow("Frame", frame)
+            frame_rate = vc.get(cv2.CAP_PROP_FPS)
+            time_per_frame = int(1000 / frame_rate)
+            key = cv2.waitKey(time_per_frame if show else 1) & 0xFF
+            if key == ord("q"):
+                break
+    if show:
+        cv2.destroyAllWindows()
+    for i, side in enumerate(colors_for_sides):
+        side = np.array(side).transpose()
+        colors_for_sides[i] = []
+        for field in side:
+            numbers, counts = np.unique(field, return_counts=True)
+            number = numbers[np.argmax(counts)]
+            colors_for_sides[i].append(number)
+    vc.release()
+    return colors_for_sides
+
+
+class CubeWebcamStream:
+    def __init__(self, src=0, name="CubeVideo"):
+        self.stream = cv2.VideoCapture(src)
+        _, self.frame = self.stream.read()
+        self.colors = None
+        self.name = name
+        self.stopped = False
+
+    def start(self):
+        # start the thread to read frames from the video stream
+        t = Thread(target=self.update, name=self.name, args=())
+        t.daemon = True
+        t.start()
+        return self
+
+    def update(self):
+        # keep looping infinitely until the thread is stopped
+        while True:
+            # if the thread indicator variable is set, stop the thread
+            if self.stopped:
+                return
+
+            # otherwise, read the next frame from the stream
+            _, raw_frame = self.stream.read()
+            found_colors, frame = find_colored_squares_in_image(raw_frame)
+            if len(found_colors) == 9:
+                self.frame = frame
+                self.colors = found_colors
+            else:
+                self.frame = raw_frame
+                self.colors = None
+
+    def read(self):
+        # return the frame most recently read
+        return self.colors, self.frame
+
+    def stop(self):
+        # indicate that the thread should be stopped
+        self.stopped = True
+
+
 if __name__ == '__main__':
-    images_to_print = [f"cube_1_{i}" for i in range(6)]
-    # images_to_print = ["cube_1_4"]
-    # images_to_print = [f"cube_1_{i}_warped" for i in range(3, 6)]
-    for image_name in images_to_print:
-        image = cv2.imread(f"./data/{image_name}.png")
+    # images_to_print = [f"cube_1_{i}" for i in range(6)]
+    # # images_to_print = ["cube_1_4"]
+    # # images_to_print = [f"cube_1_{i}_warped" for i in range(3, 6)]
+    # for image_name in images_to_print:
+    #     image = cv2.imread(f"./data/{image_name}.png")
+    #     found_colors, image = find_colored_squares_in_image(image)
+    #     print(f"colors {image_name}:", found_colors)
+    #     cv2.imshow(image_name, image)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    # construct the argument parser and parse the arguments
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-i", "--image", help="path to input image")
+    ap.add_argument("-v", "--video", help="path to input video")
+
+    args = vars(ap.parse_args())
+
+    image_path = args.get("image", False)
+    video_path = args.get("video", None)
+    if image_path:
+        image = cv2.imread(image_path)
         found_colors, image = find_colored_squares_in_image(image)
-        print(f"colors {image_name}:", found_colors)
-        cv2.imshow(image_name, image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+        print(f"colors {image_path}:", found_colors)
+        cv2.imshow("Output", image)
+        cv2.waitKey(0)
+    elif video_path:
+        colors = colors_from_video(video_path=video_path, show=not video_path)
+        print(colors)
+    else:
+        stream = CubeWebcamStream().start()
+        while True:
+            colors, frame = stream.read()
+
+            cv2.imshow("Frame", frame)
+            key = cv2.waitKey(1) & 0xFF
+            print("colors", colors)
+
+            if key == ord("q"):
+                break
+        cv2.destroyAllWindows()
