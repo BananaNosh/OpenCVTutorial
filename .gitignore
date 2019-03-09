@@ -113,3 +113,6 @@ cache/
 *.avi
 *.png
 
+# credentials
+stallcatcher/credentials
+
